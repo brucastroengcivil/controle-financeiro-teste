@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Controle Financeiro</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#12161d" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Financeiro" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
+  :root {
+    --bg: #12161d;
+    --panel: #1a2029;
+    --panel-2: #202836;
+    --border: rgba(255,255,255,0.09);
+    --text: #ece8de;
+    --text-dim: #8d94a3;
+    --brl: #55b28d;
+    --pen: #e2984f;
+    --danger: #e0637a;
+    --gold: #cba15e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); }
+  body { font-family: 'Inter', sans-serif; color: var(--text); }
+  input, select, button, textarea { font-family: 'Inter', sans-serif; }
+  input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  #app-shell {
+    min-height: 100vh;
+    max-width: 460px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding: 22px 18px 14px; border-bottom: 1px solid var(--border);
+  }
+  .header-title { font-family: 'Fraunces', serif; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+  .header-subtitle { font-size: 12px; color: var(--text-dim); margin-top: 2px; display: flex; align-items: center; }
+  .sync-dot-wrap { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; font-size: 10.5px; }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .header-right { display: flex; align-items: center; gap: 8px; }
+  .refresh-btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 8px; width: 30px; height: 30px; display: flex; align-items: center;
+    justify-content: center; cursor: pointer;
+  }
+  .refresh-btn svg { width: 14px; height: 14px; }
+  .refresh-btn.loading svg { animation: spin 0.8s linear infinite; }
+  .header-badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px; display: flex; gap: 6px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px;
+  }
+  main { flex: 1; padding: 16px 16px 90px; overflow-y: auto; }
+
+  .section-label { font-size: 12.5px; color: var(--text-dim); margin: 18px 2px 8px; font-weight: 500; }
+
+  .segmented { display: flex; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 3px; }
+  .segmented button {
+    flex: 1; padding: 8px 0; border: none; border-radius: 7px; background: transparent;
+    color: var(--text-dim); font-size: 13.5px; font-weight: 500; cursor: pointer;
+  }
+  .segmented button.active { background: var(--panel-2); color: var(--text); }
+
+  .balance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .balance-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; }
+  .balance-card-name { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .balance-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 15.5px; font-weight: 500; }
+
+  .total-strip { display: flex; justify-content: space-between; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; margin-top: 10px; gap: 6px; }
+  .total-strip-label { display: block; font-size: 10.5px; color: var(--text-dim); margin-bottom: 3px; }
+  .total-strip-value { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 600; }
+
+  .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px; margin-top: 4px; }
+  .chart-svg-wrap { position: relative; width: 100%; }
+  .chart-svg-wrap svg { touch-action: none; }
+  .chart-tooltip {
+    position: absolute; pointer-events: none; background: var(--panel-2); border: 1px solid var(--gold);
+    border-radius: 6px; padding: 5px 9px; font-size: 11px; font-family: 'IBM Plex Mono', monospace;
+    color: var(--text); white-space: nowrap; transform: translate(-50%, -125%); z-index: 5;
+  }
+  .extreme-card { background: var(--panel-2); border: 1.5px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .extreme-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 600; }
+  .extreme-card-date { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+  .ledger-list { display: flex; flex-direction: column; gap: 6px; }
+  .ledger-row { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .ledger-top-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .ledger-desc { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+  .ledger-meta { font-size: 11px; font-family: 'IBM Plex Mono', monospace; color: var(--text-dim); margin-top: 4px; }
+  .ledger-value { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+
+  .empty-state { color: var(--text-dim); font-size: 13px; padding: 26px 10px; text-align: center; border: 1px dashed var(--border); border-radius: 10px; }
+
+  .filter-row { display: flex; gap: 8px; margin-bottom: 4px; }
+  .search-input {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 12px; font-size: 13.5px; width: 100%; margin-bottom: 8px;
+  }
+  .search-input::placeholder { color: var(--text-dim); }
+  select {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 8px; font-size: 12.5px; flex: 1; min-width: 0;
+  }
+  .add-btn {
+    display: flex; align-items: center; gap: 5px; background: var(--gold); color: #1a1406; border: none;
+    border-radius: 8px; padding: 8px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .cancel-btn { background: transparent; color: var(--text-dim); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12.5px; cursor: pointer; }
+
+  .form-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 10px 0 4px; display: flex; flex-direction: column; gap: 10px; }
+  .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+  .item-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .item-top { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; }
+  .item-mid { flex: 1; min-width: 0; }
+  .check-btn { background: none; border: none; color: var(--text-dim); padding: 0; display: flex; cursor: pointer; }
+  .check-btn.on { color: var(--brl); }
+  .check-btn svg { width: 20px; height: 20px; }
+  .chevron { color: var(--text-dim); width: 16px; height: 16px; transition: transform .15s; flex-shrink: 0; }
+  .chevron.open { transform: rotate(180deg); }
+  .item-detail { border-top: 1px solid var(--border); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+  .field-row { display: flex; flex-direction: column; gap: 4px; }
+  .field-label { font-size: 11.5px; color: var(--text-dim); }
+  input[type=text], input[type=number], input[type=date] {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 7px;
+    padding: 8px 10px; font-size: 13.5px; width: 100%;
+  }
+  .delete-btn { display: flex; align-items: center; gap: 6px; background: none; border: none; color: var(--danger);
+    font-size: 12.5px; padding: 4px 0; cursor: pointer; align-self: flex-start; }
+  .delete-btn svg { width: 14px; height: 14px; }
+
+  .rate-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px 12px; margin-bottom: 12px; }
+  .rate-label { font-size: 11.5px; color: var(--text-dim); margin-bottom: 6px; }
+  .rate-row { display: flex; align-items: center; gap: 8px; }
+  .rate-text { font-size: 13.5px; color: var(--text-dim); }
+
+  .account-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+  .add-account-btn { display: flex; align-items: center; gap: 6px; background: none; border: 1px dashed var(--border); color: var(--text-dim);
+    border-radius: 10px; padding: 10px 0; justify-content: center; font-size: 12.5px; width: 100%; cursor: pointer; }
+  .add-account-btn svg { width: 15px; height: 15px; }
+
+  .backup-row { display: flex; gap: 8px; margin-top: 4px; }
+  .backup-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--panel-2);
+    border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px 0; font-size: 12.5px; cursor: pointer; }
+
+  .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+  .login-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 26px 22px; width: 100%; max-width: 340px; }
+
+  nav.tab-bar {
+    display: flex; justify-content: space-around; background: var(--panel); border-top: 1px solid var(--border);
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom)); position: sticky; bottom: 0;
+  }
+  .tab-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; cursor: pointer; padding: 4px 10px; color: var(--text-dim); }
+  .tab-btn.active { color: var(--gold); }
+  .tab-btn svg { width: 20px; height: 20px; }
+  .tab-btn-label { font-size: 10.5px; }
+</style>
+</head>
+<body>
+<div id="app-shell"></div>
+<script>
+/* ---------------------------------------------------------------------- *
+ *  Controle Financeiro — R$ / PEN — versão HTML autônoma (PWA)
+ *  Sincroniza via Firebase Firestore (tempo real + persistência offline).
+ * ---------------------------------------------------------------------- */
+
+const APP_BUILD = "2026-09-08.6"; // mude este valor a cada atualização, para conferir no app se a versão é a mais recente
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAx6CD4hD9gD-r9kTL3nfAbE1Qg-w2LyTw",
+  authDomain: "controle-financeiro-7f66e.firebaseapp.com",
+  databaseURL: "https://controle-financeiro-7f66e-default-rtdb.firebaseio.com",
+  projectId: "controle-financeiro-7f66e",
+  storageBucket: "controle-financeiro-7f66e.firebasestorage.app",
+  messagingSenderId: "1035634621982",
+  appId: "1:1035634621982:web:d6deb418a42e86488d780f",
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+try {
+  db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+    console.warn("Persistência offline não disponível:", err.code);
+  });
+} catch (e) {
+  console.warn("enablePersistence falhou", e);
+}
+let docRef = null; // definido após o login, com base no UID do usuário
+let currentUser = null;
+
+const ICONS = {
+  wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>',
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+  landmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+  circle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/></svg>',
+  circleCheck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+};
+
+const SEED_ACCOUNTS = {
+  BRL: [
+    { id: "conta-brl-1", name: "Conta 1", initial: 0, initialDate: new Date().toISOString().slice(0, 10) },
+  ],
+  PEN: [
+    { id: "conta-pen-1", name: "Conta 1", initial: 0, initialDate: new Date().toISOString().slice(0, 10) },
+  ],
+};
+const SEED_RATE = 0.75;
+const SEED_DESPESAS = [];
+const SEED_RECEITAS = [];
+
+const monthNames = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+/* ------------------------------ state ------------------------------ */
+
+let state = {
+  ready: false,
+  syncStatus: "loading", // loading | saving | synced | error
+  tab: "fluxo",
+  fluxoMode: "real",
+  graficoMode: "previsto",
+  graficoRealPeriod: "3m",
+  fluxoFilterYear: "todos",
+  fluxoFilterMonth: "todos",
+  fluxoSearchText: "",
+  despesasFilterYear: "todos",
+  despesasFilterMonth: "todos",
+  despesasSearchText: "",
+  receitasFilterYear: "todos",
+  receitasFilterMonth: "todos",
+  receitasSearchText: "",
+  showDespesaForm: false,
+  showReceitaForm: false,
+  newItemRepeat: { despesa: "none", receita: "none" },
+  openItems: new Set(),
+  accounts: SEED_ACCOUNTS,
+  rate: SEED_RATE,
+  despesas: SEED_DESPESAS,
+  receitas: SEED_RECEITAS,
+};
+
+let localDraft = null; // working copy of the synced data, mutated locally
+let saveTimer = null;
+let firstSnapshotHandled = false;
+
+/* ------------------------------ helpers ------------------------------ */
+
+const uid = (p) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const addDaysStr = (dateStr, days) => {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+const addMonthsClampedStr = (dateStr, months) => {
+  const [y, m, day] = dateStr.split("-").map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  const finalDay = Math.min(day, lastDay);
+  return new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), finalDay)).toISOString().slice(0, 10);
+};
+function generateRecurringDates(start, end, freq) {
+  const dates = [];
+  let i = 0;
+  let cursor = start;
+  while (cursor <= end && i < 500) {
+    dates.push(cursor);
+    i++;
+    cursor = freq === "weekly" ? addDaysStr(start, i * 7) : addMonthsClampedStr(start, i);
+  }
+  return dates;
+}
+const fmtBRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const fmtPEN = new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" });
+const fmt = (v, cur) => (cur === "PEN" ? fmtPEN : fmtBRL).format(v || 0);
+const fmtDate = (iso) => {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+};
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const normalizeText = (s) =>
+  String(s ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+const matchesSearch = (text, query) => !query || normalizeText(text).includes(normalizeText(query));
+
+function buildAccountIndex(accounts) {
+  const idx = {};
+  accounts.BRL.forEach((a) => (idx[a.name] = { ...a, currency: "BRL" }));
+  accounts.PEN.forEach((a) => (idx[a.name] = { ...a, currency: "PEN" }));
+  return idx;
+}
+
+function computeBalancesAt(accounts, despesas, receitas, mode, atDate) {
+  const bal = {};
+  [...accounts.BRL, ...accounts.PEN].forEach((a) => {
+    bal[a.name] = a.initialDate <= atDate ? a.initial : 0;
+  });
+  despesas.forEach((d) => {
+    const date = mode === "real" ? (d.done ? d.doneDate || d.dueDate : null) : d.dueDate;
+    if (date && date <= atDate) bal[d.account] = (bal[d.account] || 0) - d.value;
+  });
+  receitas.forEach((r) => {
+    const date = mode === "real" ? (r.done ? r.doneDate || r.dueDate : null) : r.dueDate;
+    if (date && date <= atDate) bal[r.account] = (bal[r.account] || 0) + r.value;
+  });
+  return bal;
+}
+
+function totalsFromBalances(accounts, bal, rate) {
+  const brl = accounts.BRL.reduce((s, a) => s + (bal[a.name] || 0), 0);
+  const pen = accounts.PEN.reduce((s, a) => s + (bal[a.name] || 0), 0);
+  return { brl, pen, totalBRL: brl + pen * rate };
+}
+
+/* ------------------------------ persistence (Firestore) ------------------------------ */
+
+function applyRemoteData(data) {
+  state.accounts = data.accounts || state.accounts;
+  state.rate = typeof data.rate === "number" ? data.rate : state.rate;
+  state.despesas = data.despesas || state.despesas;
+  state.receitas = data.receitas || state.receitas;
+  localDraft = {
+    accounts: state.accounts,
+    rate: state.rate,
+    despesas: state.despesas,
+    receitas: state.receitas,
+  };
+}
+
+function startFirestoreSync() {
+  docRef.onSnapshot(
+    { includeMetadataChanges: true },
+    (snapshot) => {
+      const data = snapshot.data();
+      if (!data) {
+        // documento ainda não existe: se já não vem do cache, cria com os dados iniciais
+        if (!snapshot.metadata.fromCache && !firstSnapshotHandled) {
+          firstSnapshotHandled = true;
+          localDraft = { accounts: state.accounts, rate: state.rate, despesas: state.despesas, receitas: state.receitas };
+          docRef.set(localDraft).catch((e) => console.error("Falha ao criar documento inicial", e));
+        }
+        state.ready = true;
+        state.syncStatus = snapshot.metadata.fromCache ? "offline" : "synced";
+        render();
+        return;
+      }
+      firstSnapshotHandled = true;
+      applyRemoteData(data);
+      state.ready = true;
+      state.syncStatus = snapshot.metadata.hasPendingWrites
+        ? "saving"
+        : snapshot.metadata.fromCache
+        ? "offline"
+        : "synced";
+      render();
+    },
+    (error) => {
+      console.error("Erro de sincronização com o Firestore", error);
+      state.ready = true;
+      state.syncStatus = "error";
+      render();
+    }
+  );
+}
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    docRef.set(localDraft).catch((e) => {
+      console.error("Falha ao salvar no Firestore", e);
+      state.syncStatus = "error";
+      renderHeaderOnly();
+    });
+  }, 400);
+}
+
+function mutate(fn) {
+  fn();
+  localDraft = {
+    accounts: state.accounts,
+    rate: state.rate,
+    despesas: state.despesas,
+    receitas: state.receitas,
+  };
+  scheduleSave();
+  render();
+}
+
+/* ------------------------------ render: header & tab bar ------------------------------ */
+
+function renderHeaderOnly() {
+  const el = document.getElementById("sync-indicator");
+  if (el) el.outerHTML = syncDotHtml();
+  const btn = document.getElementById("refresh-btn");
+  if (btn) btn.classList.toggle("loading", state.syncStatus === "loading");
+}
+
+function syncDotHtml() {
+  const color =
+    state.syncStatus === "error" ? "var(--danger)" : state.syncStatus === "synced" ? "var(--brl)" : state.syncStatus === "offline" ? "var(--pen)" : "var(--gold)";
+  const label =
+    state.syncStatus === "error"
+      ? "erro ao sincronizar"
+      : state.syncStatus === "saving"
+      ? "salvando…"
+      : state.syncStatus === "loading"
+      ? "carregando…"
+      : state.syncStatus === "offline"
+      ? "offline · dados locais"
+      : "sincronizado";
+  return `<span class="sync-dot-wrap" id="sync-indicator"><span class="sync-dot" style="background:${color}"></span>${label}</span>`;
+}
+
+function renderHeader() {
+  return `
+    <header>
+      <div>
+        <div class="header-title">Controle Financeiro</div>
+        <div class="header-subtitle">Brasil · Perú ${syncDotHtml()}</div>
+      </div>
+      <div class="header-right">
+        <button class="refresh-btn ${state.syncStatus === "loading" ? "loading" : ""}" id="refresh-btn" data-action="refresh" title="Forçar reconexão">${ICONS.refresh}</button>
+        <div class="header-badge">
+          <span style="color:var(--brl)">R$</span><span style="color:var(--text-dim)">·</span><span style="color:var(--pen)">S/</span>
+        </div>
+      </div>
+    </header>`;
+}
+
+function renderTabBar() {
+  const tabs = [
+    ["fluxo", ICONS.wallet, "Fluxo"],
+    ["grafico", ICONS.chart, "Gráfico"],
+    ["despesas", ICONS.down, "Despesas"],
+    ["receitas", ICONS.up, "Receitas"],
+    ["contas", ICONS.landmark, "Contas"],
+  ];
+  return `<nav class="tab-bar">${tabs
+    .map(
+      ([key, icon, label]) => `
+    <button class="tab-btn ${state.tab === key ? "active" : ""}" data-action="set-tab" data-tab="${key}">
+      ${icon}<span class="tab-btn-label">${label}</span>
+    </button>`
+    )
+    .join("")}</nav>`;
+}
+
+/* ------------------------------ render: Fluxo ------------------------------ */
+
+function renderFluxoTab() {
+  const today = todayStr();
+  const accounts = state.accounts;
+  const accountIndex = buildAccountIndex(accounts);
+  const mode = state.fluxoMode;
+
+  const currentBalances = computeBalancesAt(accounts, state.despesas, state.receitas, "real", today);
+  const currentTotals = totalsFromBalances(accounts, currentBalances, state.rate);
+
+  let rows = [];
+  state.despesas.forEach((d) => {
+    const date = mode === "real" ? (d.done ? d.doneDate || d.dueDate : null) : d.dueDate;
+    if (!date) return;
+    rows.push({ ...d, date, kind: "despesa", currency: accountIndex[d.account]?.currency || "BRL" });
+  });
+  state.receitas.forEach((r) => {
+    const date = mode === "real" ? (r.done ? r.doneDate || r.dueDate : null) : r.dueDate;
+    if (!date) return;
+    rows.push({ ...r, date, kind: "receita", currency: accountIndex[r.account]?.currency || "BRL" });
+  });
+  rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  const years = [...new Set(rows.map((r) => r.date?.slice(0, 4)).filter(Boolean))].sort();
+  const filtered = rows
+    .filter((r) => (state.fluxoFilterYear === "todos" ? true : r.date?.slice(0, 4) === state.fluxoFilterYear))
+    .filter((r) => (state.fluxoFilterMonth === "todos" ? true : r.date?.slice(5, 7) === state.fluxoFilterMonth))
+    .filter((r) => matchesSearch(r.description, state.fluxoSearchText));
+
+  return `
+    ${rateCardHtml()}
+    <div class="segmented">
+      <button class="${mode === "real" ? "active" : ""}" data-action="set-mode" data-mode="real">Real</button>
+      <button class="${mode === "previsto" ? "active" : ""}" data-action="set-mode" data-mode="previsto">Previsto</button>
+    </div>
+
+    ${
+      mode === "real"
+        ? `
+      <div class="section-label">Saldo atual · ${fmtDate(today)}</div>
+      <div class="balance-grid">
+        ${[...accounts.BRL, ...accounts.PEN]
+          .map((a) => {
+            const isPen = accounts.PEN.includes(a);
+            return `<div class="balance-card">
+              <div class="balance-card-name">${esc(a.name)}</div>
+              <div class="balance-card-value" style="color:${isPen ? "var(--pen)" : "var(--brl)"}">${fmt(currentBalances[a.name] || 0, isPen ? "PEN" : "BRL")}</div>
+            </div>`;
+          })
+          .join("")}
+      </div>
+      <div class="total-strip">
+        <div><span class="total-strip-label">Total R$</span><span class="total-strip-value" style="color:var(--brl)">${fmtBRL.format(currentTotals.brl)}</span></div>
+        <div><span class="total-strip-label">Total S/</span><span class="total-strip-value" style="color:var(--pen)">${fmtPEN.format(currentTotals.pen)}</span></div>
+        <div><span class="total-strip-label">Total geral (R$)</span><span class="total-strip-value" style="color:var(--gold)">${fmtBRL.format(currentTotals.totalBRL)}</span></div>
+      </div>`
+        : ""
+    }
+
+    <div class="section-label">${mode === "real" ? "Movimentações realizadas" : "Todos os lançamentos previstos"}</div>
+    <input type="text" id="fluxo-search" class="search-input" data-action="search-text" data-key="fluxoSearchText"
+      placeholder="Buscar por descrição…" value="${esc(state.fluxoSearchText)}"/>
+    <div class="filter-row">
+      <select data-action="fluxo-filter-year">
+        <option value="todos" ${state.fluxoFilterYear === "todos" ? "selected" : ""}>Todo ano</option>
+        ${years.map((y) => `<option value="${y}" ${state.fluxoFilterYear === y ? "selected" : ""}>${y}</option>`).join("")}
+      </select>
+      <select data-action="fluxo-filter-month">
+        <option value="todos" ${state.fluxoFilterMonth === "todos" ? "selected" : ""}>Todo mês</option>
+        ${monthNames.map((m, i) => `<option value="${String(i + 1).padStart(2, "0")}" ${state.fluxoFilterMonth === String(i + 1).padStart(2, "0") ? "selected" : ""}>${m}</option>`).join("")}
+      </select>
+    </div>
+    <div class="ledger-list">
+      ${
+        filtered.length === 0
+          ? `<div class="empty-state">${rows.length === 0 ? (mode === "real" ? "Nenhuma movimentação marcada como paga ou recebida ainda." : "Nenhum lançamento cadastrado.") : "Nenhum lançamento neste período."}</div>`
+          : filtered
+              .map(
+                (row) => `
+        <div class="ledger-row">
+          <div class="ledger-top-line">
+            <span class="ledger-desc">${esc(row.description)}</span>
+            <span class="ledger-value" style="color:${row.kind === "despesa" ? "var(--danger)" : row.currency === "PEN" ? "var(--pen)" : "var(--brl)"}">${row.kind === "despesa" ? "-" : "+"}${fmt(row.value, row.currency)}</span>
+          </div>
+          <div class="ledger-meta">${fmtDate(row.date)} · ${esc(row.account)}${
+                  mode === "previsto" ? ` <span style="color:${row.done ? "var(--brl)" : "var(--text-dim)"}">· ${row.done ? "liquidado" : "pendente"}</span>` : ""
+                }</div>
+        </div>`
+              )
+              .join("")
+      }
+    </div>`;
+}
+
+/* ------------------------------ dados e gráfico do saldo ------------------------------ */
+
+function buildChartData(mode) {
+  const accounts = state.accounts;
+  const today = todayStr();
+  let dateSet;
+  if (mode === "previsto") {
+    dateSet = new Set([
+      today,
+      ...accounts.BRL.map((a) => a.initialDate),
+      ...accounts.PEN.map((a) => a.initialDate),
+      ...state.despesas.map((d) => d.dueDate),
+      ...state.receitas.map((r) => r.dueDate),
+    ]);
+  } else {
+    dateSet = new Set([...accounts.BRL.map((a) => a.initialDate), ...accounts.PEN.map((a) => a.initialDate)]);
+    state.despesas.forEach((d) => {
+      if (d.done) dateSet.add(d.doneDate || d.dueDate);
+    });
+    state.receitas.forEach((r) => {
+      if (r.done) dateSet.add(r.doneDate || r.dueDate);
+    });
+    dateSet.add(today);
+  }
+  let dates = [...dateSet].filter(Boolean).sort();
+  // o previsto olha só daqui pra frente; o real nunca passa de hoje.
+  if (mode === "previsto") dates = dates.filter((d) => d >= today);
+  else dates = dates.filter((d) => d <= today);
+  return dates.map((date) => {
+    const bal = computeBalancesAt(accounts, state.despesas, state.receitas, mode, date);
+    const t = totalsFromBalances(accounts, bal, state.rate);
+    return { date, total: Math.round(t.totalBRL * 100) / 100 };
+  });
+}
+
+function findExtremes(data) {
+  let min = data[0], max = data[0];
+  for (const d of data) {
+    if (d.total < min.total) min = d;
+    if (d.total > max.total) max = d;
+  }
+  return { min, max };
+}
+
+function buildBalanceChart(data) {
+  const W = 400,
+    H = 260,
+    PAD_X = 10,
+    PAD_TOP = 34,
+    PAD_BOTTOM = 26;
+  const values = data.map((d) => d.total);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 0);
+  const range = max - min || 1;
+  const usableH = H - PAD_TOP - PAD_BOTTOM;
+  const scaleY = (v) => H - PAD_BOTTOM - ((v - min) / range) * usableH;
+  const stepX = (W - PAD_X * 2) / (data.length - 1 || 1);
+  const points = data.map((d, i) => [PAD_X + i * stepX, scaleY(d.total)]);
+  const zeroY = scaleY(0);
+
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const areaPath = `${linePath} L${points[points.length - 1][0].toFixed(1)},${zeroY.toFixed(1)} L${points[0][0].toFixed(1)},${zeroY.toFixed(1)} Z`;
+
+  const { min: minPoint, max: maxPoint } = findExtremes(data);
+  const minIdx = data.indexOf(minPoint);
+  const maxIdx = data.indexOf(maxPoint);
+  const minXY = points[minIdx];
+  const maxXY = points[maxIdx];
+
+  const clipId = "clip-" + Math.random().toString(36).slice(2, 8);
+
+  const minLabelAnchor = minXY[0] > W * 0.6 ? "end" : minXY[0] < W * 0.15 ? "start" : "middle";
+  const minLabelDx = minLabelAnchor === "end" ? -6 : minLabelAnchor === "start" ? 6 : 0;
+  const minLabelY = minXY[1] < H - PAD_BOTTOM - 26 ? minXY[1] - 14 : minXY[1] - 14;
+
+  const maxLabelAnchor = maxXY[0] > W * 0.6 ? "end" : maxXY[0] < W * 0.15 ? "start" : "middle";
+  const maxLabelDx = maxLabelAnchor === "end" ? -6 : maxLabelAnchor === "start" ? 6 : 0;
+
+  const firstDate = data[0].date,
+    lastDate = data[data.length - 1].date;
+
+  const pointsPayload = JSON.stringify(points.map((p, i) => ({ x: p[0], y: p[1], date: data[i].date, total: data[i].total })));
+
+  return `
+    <div class="chart-svg-wrap" data-chart-points='${pointsPayload}' data-chart-w="${W}" data-chart-h="${H}">
+      <svg class="balance-chart-svg" viewBox="0 0 ${W} ${H}" style="width:100%;height:260px;display:block;overflow:visible">
+        <defs>
+          <clipPath id="${clipId}-above"><rect x="0" y="0" width="${W}" height="${zeroY.toFixed(1)}"/></clipPath>
+          <clipPath id="${clipId}-below"><rect x="0" y="${zeroY.toFixed(1)}" width="${W}" height="${(H - zeroY).toFixed(1)}"/></clipPath>
+          <linearGradient id="${clipId}-gpos" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--brl)" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="var(--brl)" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="${clipId}-gneg" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stop-color="var(--danger)" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="var(--danger)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+
+        <line x1="${PAD_X}" y1="${zeroY.toFixed(1)}" x2="${W - PAD_X}" y2="${zeroY.toFixed(1)}" stroke="rgba(255,255,255,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="${W - PAD_X}" y="${(zeroY - 5).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-dim)" font-family="'IBM Plex Mono',monospace">R$ 0</text>
+
+        <path d="${areaPath}" fill="url(#${clipId}-gpos)" clip-path="url(#${clipId}-above)"/>
+        <path d="${areaPath}" fill="url(#${clipId}-gneg)" clip-path="url(#${clipId}-below)"/>
+        <path d="${linePath}" fill="none" stroke="var(--brl)" stroke-width="2" clip-path="url(#${clipId}-above)"/>
+        <path d="${linePath}" fill="none" stroke="var(--danger)" stroke-width="2" clip-path="url(#${clipId}-below)"/>
+
+        <line x1="${minXY[0].toFixed(1)}" y1="${minXY[1].toFixed(1)}" x2="${minXY[0].toFixed(1)}" y2="${H - PAD_BOTTOM}" stroke="var(--gold)" stroke-width="1" stroke-dasharray="2,3" opacity="0.6"/>
+        <circle cx="${minXY[0].toFixed(1)}" cy="${minXY[1].toFixed(1)}" r="4" fill="var(--bg)" stroke="var(--gold)" stroke-width="2"/>
+        <text x="${(minXY[0] + minLabelDx).toFixed(1)}" y="${minLabelY.toFixed(1)}" text-anchor="${minLabelAnchor}" font-size="10.5" font-weight="600" fill="var(--gold)" font-family="'IBM Plex Mono',monospace">menor: ${fmtBRL.format(minPoint.total)}</text>
+        <text x="${(minXY[0] + minLabelDx).toFixed(1)}" y="${(minLabelY + 12).toFixed(1)}" text-anchor="${minLabelAnchor}" font-size="9" fill="var(--text-dim)" font-family="'IBM Plex Mono',monospace">${fmtDate(minPoint.date)}</text>
+
+        ${
+          maxIdx !== minIdx
+            ? `<circle cx="${maxXY[0].toFixed(1)}" cy="${maxXY[1].toFixed(1)}" r="3" fill="var(--panel)" stroke="var(--text-dim)" stroke-width="1.5"/>
+        <text x="${(maxXY[0] + maxLabelDx).toFixed(1)}" y="${(maxXY[1] - 10).toFixed(1)}" text-anchor="${maxLabelAnchor}" font-size="9" fill="var(--text-dim)" font-family="'IBM Plex Mono',monospace">maior: ${fmtBRL.format(maxPoint.total)}</text>`
+            : ""
+        }
+
+        <line class="chart-hoverline" x1="0" y1="${PAD_TOP - 10}" x2="0" y2="${H - PAD_BOTTOM}" stroke="var(--text-dim)" stroke-width="1" style="display:none"/>
+        <circle class="chart-hoverdot" r="5" fill="var(--gold)" stroke="var(--bg)" stroke-width="1.5" style="display:none"/>
+      </svg>
+      <div class="chart-tooltip" style="display:none"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);padding:0 2px;margin-top:-4px">
+      <span>${fmtDate(firstDate)}</span><span>${fmtDate(lastDate)}</span>
+    </div>
+    <div style="text-align:center;font-size:10.5px;color:var(--text-dim);margin-top:6px">Toque ou passe o dedo sobre o gráfico para ver cada ponto</div>`;
+}
+
+function bindChartInteractivity(shell) {
+  const wrap = shell.querySelector(".chart-svg-wrap");
+  if (!wrap) return;
+  const svg = wrap.querySelector(".balance-chart-svg");
+  const hoverLine = wrap.querySelector(".chart-hoverline");
+  const hoverDot = wrap.querySelector(".chart-hoverdot");
+  const tooltip = wrap.querySelector(".chart-tooltip");
+  if (!svg || !hoverLine || !hoverDot || !tooltip) return;
+
+  const points = JSON.parse(wrap.dataset.chartPoints);
+  const W = parseFloat(wrap.dataset.chartW);
+  const H = parseFloat(wrap.dataset.chartH);
+
+  function nearestPoint(clientX) {
+    const rect = svg.getBoundingClientRect();
+    const svgX = ((clientX - rect.left) / rect.width) * W;
+    let nearest = points[0],
+      dist = Math.abs(points[0].x - svgX);
+    for (const p of points) {
+      const d = Math.abs(p.x - svgX);
+      if (d < dist) {
+        nearest = p;
+        dist = d;
+      }
+    }
+    return { nearest, rect };
+  }
+
+  function showAt(clientX) {
+    const { nearest, rect } = nearestPoint(clientX);
+    hoverLine.setAttribute("x1", nearest.x);
+    hoverLine.setAttribute("x2", nearest.x);
+    hoverLine.style.display = "block";
+    hoverDot.setAttribute("cx", nearest.x);
+    hoverDot.setAttribute("cy", nearest.y);
+    hoverDot.style.display = "block";
+    tooltip.textContent = `${fmtDate(nearest.date)} · ${fmtBRL.format(nearest.total)}`;
+    tooltip.style.display = "block";
+    const pxX = (nearest.x / W) * rect.width;
+    const pxY = (nearest.y / H) * rect.height;
+    tooltip.style.left = `${Math.min(Math.max(pxX, 4), rect.width - 4)}px`;
+    tooltip.style.top = `${Math.max(pxY, 24)}px`;
+  }
+
+  function hide() {
+    hoverLine.style.display = "none";
+    hoverDot.style.display = "none";
+    tooltip.style.display = "none";
+  }
+
+  svg.addEventListener("pointerdown", (e) => showAt(e.clientX));
+  svg.addEventListener("pointermove", (e) => showAt(e.clientX));
+  svg.addEventListener("pointerleave", hide);
+  svg.addEventListener("pointerup", hide);
+  svg.addEventListener("pointercancel", hide);
+}
+
+function renderGraficoTab() {
+  const mode = state.graficoMode;
+  let data = buildChartData(mode);
+
+  if (mode === "real" && state.graficoRealPeriod !== "tudo") {
+    const days = { "30d": 30, "3m": 90, "6m": 180 }[state.graficoRealPeriod] || 0;
+    const cutoff = addDaysStr(todayStr(), -days);
+    data = data.filter((d) => d.date >= cutoff);
+  }
+
+  const periodSelectorHtml =
+    mode === "real"
+      ? `<select data-action="set-real-period" style="margin-bottom:10px;width:100%">
+        <option value="30d" ${state.graficoRealPeriod === "30d" ? "selected" : ""}>Últimos 30 dias</option>
+        <option value="3m" ${state.graficoRealPeriod === "3m" ? "selected" : ""}>Últimos 3 meses</option>
+        <option value="6m" ${state.graficoRealPeriod === "6m" ? "selected" : ""}>Últimos 6 meses</option>
+        <option value="tudo" ${state.graficoRealPeriod === "tudo" ? "selected" : ""}>Desde o início</option>
+      </select>`
+      : "";
+
+  if (data.length < 2) {
+    return `
+      <div class="segmented">
+        <button class="${mode === "real" ? "active" : ""}" data-action="set-grafico-mode" data-mode="real">Real</button>
+        <button class="${mode === "previsto" ? "active" : ""}" data-action="set-grafico-mode" data-mode="previsto">Previsto</button>
+      </div>
+      ${periodSelectorHtml}
+      <div class="empty-state" style="margin-top:16px">${
+        mode === "real" ? "Nenhuma movimentação registrada nesse período." : "Lance despesas e receitas para ver a projeção do saldo aqui."
+      }</div>`;
+  }
+
+  const { min, max } = findExtremes(data);
+
+  return `
+    <div class="segmented">
+      <button class="${mode === "real" ? "active" : ""}" data-action="set-grafico-mode" data-mode="real">Real</button>
+      <button class="${mode === "previsto" ? "active" : ""}" data-action="set-grafico-mode" data-mode="previsto">Previsto</button>
+    </div>
+    ${periodSelectorHtml}
+
+    <div class="section-label">${mode === "previsto" ? "Menor saldo previsto" : "Menor saldo no período"}</div>
+    <div class="extreme-card" style="border-color:${min.total < 0 ? "var(--danger)" : "var(--border)"}">
+      <div>
+        <div class="extreme-card-value" style="color:${min.total < 0 ? "var(--danger)" : "var(--brl)"}">${fmtBRL.format(min.total)}</div>
+        <div class="extreme-card-date">${fmtDate(min.date)}${min.total < 0 ? " · saldo negativo" : " · ainda positivo"}</div>
+      </div>
+    </div>
+
+    <div class="section-label">Saldo total (R$) ao longo do tempo</div>
+    <div class="chart-card">${buildBalanceChart(data)}</div>
+
+    <div class="total-strip" style="margin-top:12px">
+      <div><span class="total-strip-label">Menor saldo</span><span class="total-strip-value" style="color:${min.total < 0 ? "var(--danger)" : "var(--brl)"}">${fmtBRL.format(min.total)}</span></div>
+      <div><span class="total-strip-label">Maior saldo</span><span class="total-strip-value" style="color:var(--brl)">${fmtBRL.format(max.total)}</span></div>
+      <div><span class="total-strip-label">Saldo hoje</span><span class="total-strip-value" style="color:var(--gold)">${fmtBRL.format(data.find((d) => d.date === todayStr())?.total ?? data[data.length - 1].total)}</span></div>
+    </div>`;
+}
+
+
+function rateCardHtml() {
+  return `
+    <div class="rate-card">
+      <div class="rate-label">Taxa de câmbio</div>
+      <div class="rate-row">
+        <span class="rate-text">1 S/ (PEN) =</span>
+        <input type="number" step="0.01" style="width:90px;text-align:right" value="${state.rate}" data-action="set-rate"/>
+        <span class="rate-text">R$</span>
+      </div>
+    </div>`;
+}
+
+/* ------------------------------ render: Despesas / Receitas ------------------------------ */
+
+function renderLancamentosTab(kind) {
+  const isDespesa = kind === "despesa";
+  const items = isDespesa ? state.despesas : state.receitas;
+  const accountIndex = buildAccountIndex(state.accounts);
+  const accountNames = [...state.accounts.BRL, ...state.accounts.PEN].map((a) => a.name);
+  const filterYearKey = isDespesa ? "despesasFilterYear" : "receitasFilterYear";
+  const filterMonthKey = isDespesa ? "despesasFilterMonth" : "receitasFilterMonth";
+  const searchKey = isDespesa ? "despesasSearchText" : "receitasSearchText";
+  const searchId = isDespesa ? "despesas-search" : "receitas-search";
+  const showFormKey = isDespesa ? "showDespesaForm" : "showReceitaForm";
+  const years = [...new Set(items.map((i) => i.dueDate?.slice(0, 4)).filter(Boolean))].sort();
+
+  const filtered = items
+    .filter((i) => (state[filterYearKey] === "todos" ? true : i.dueDate?.slice(0, 4) === state[filterYearKey]))
+    .filter((i) => (state[filterMonthKey] === "todos" ? true : i.dueDate?.slice(5, 7) === state[filterMonthKey]))
+    .filter((i) => matchesSearch(i.description, state[searchKey]))
+    .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0));
+
+  const doneLabel = isDespesa ? "Pago" : "Recebido";
+  const doneDateLabel = isDespesa ? "Data em que pagou" : "Data em que recebeu";
+  const title = isDespesa ? "Despesas" : "Receitas";
+
+  return `
+    <input type="text" id="${searchId}" class="search-input" data-action="search-text" data-key="${searchKey}"
+      placeholder="Buscar por descrição…" value="${esc(state[searchKey])}"/>
+    <div class="filter-row">
+      <select data-action="lanc-filter-year" data-kind="${kind}">
+        <option value="todos" ${state[filterYearKey] === "todos" ? "selected" : ""}>Todo ano</option>
+        ${years.map((y) => `<option value="${y}" ${state[filterYearKey] === y ? "selected" : ""}>${y}</option>`).join("")}
+      </select>
+      <select data-action="lanc-filter-month" data-kind="${kind}">
+        <option value="todos" ${state[filterMonthKey] === "todos" ? "selected" : ""}>Todo mês</option>
+        ${monthNames.map((m, i) => `<option value="${String(i + 1).padStart(2, "0")}" ${state[filterMonthKey] === String(i + 1).padStart(2, "0") ? "selected" : ""}>${m}</option>`).join("")}
+      </select>
+      <button class="add-btn" data-action="toggle-form" data-kind="${kind}">${ICONS.plus} Novo</button>
+    </div>
+
+    ${state[showFormKey] ? newItemFormHtml(kind, accountNames) : ""}
+
+    <div class="section-label">${title}${filtered.length ? ` · ${filtered.length}` : ""}</div>
+    <div class="ledger-list">
+      ${
+        filtered.length === 0
+          ? `<div class="empty-state">Nada por aqui ainda.</div>`
+          : filtered.map((item) => lancamentoRowHtml(item, kind, accountIndex[item.account]?.currency || "BRL", doneLabel, doneDateLabel)).join("")
+      }
+    </div>`;
+}
+
+function newItemFormHtml(kind, accountNames) {
+  const repeatMode = state.newItemRepeat[kind] || "none";
+  return `
+    <div class="form-card" data-new-form="${kind}">
+      <div class="field-row"><div class="field-label">Conta</div>
+        <select data-field="account">${accountNames.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select>
+      </div>
+      <div class="field-row"><div class="field-label">Descrição</div>
+        <input type="text" data-field="description" placeholder="Ex: Aluguel"/>
+      </div>
+      <div class="field-row"><div class="field-label">Repetição</div>
+        <select data-action="set-repeat-mode" data-kind="${kind}">
+          <option value="none" ${repeatMode === "none" ? "selected" : ""}>Não repete (lançamento único)</option>
+          <option value="weekly" ${repeatMode === "weekly" ? "selected" : ""}>Repete toda semana</option>
+          <option value="monthly" ${repeatMode === "monthly" ? "selected" : ""}>Repete todo mês</option>
+        </select>
+      </div>
+      ${
+        repeatMode === "none"
+          ? `<div class="field-row"><div class="field-label">Data prevista</div>
+        <input type="date" data-field="dueDate" value="${todayStr()}"/>
+      </div>`
+          : `<div class="field-row"><div class="field-label">Data de início</div>
+        <input type="date" data-field="startDate" value="${todayStr()}"/>
+      </div>
+      <div class="field-row"><div class="field-label">Data de fim</div>
+        <input type="date" data-field="endDate" value="${todayStr()}"/>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-dim)">Cria um lançamento com o valor cheio em cada ${repeatMode === "weekly" ? "semana" : "mês"}, do início ao fim (não é parcelado).</div>`
+      }
+      <div class="field-row"><div class="field-label">Valor${repeatMode !== "none" ? " (de cada ocorrência)" : ""}</div>
+        <input type="number" step="0.01" data-field="value" placeholder="0.00"/>
+      </div>
+      <div class="form-actions">
+        <button class="cancel-btn" data-action="cancel-form" data-kind="${kind}">Cancelar</button>
+        <button class="add-btn" data-action="submit-form" data-kind="${kind}">${ICONS.check} Salvar</button>
+      </div>
+    </div>`;
+}
+
+function lancamentoRowHtml(item, kind, currency, doneLabel, doneDateLabel) {
+  const key = `${kind}-${item.id}`;
+  const open = state.openItems.has(key);
+  return `
+    <div class="item-card">
+      <div class="item-top" data-action="toggle-open" data-kind="${kind}" data-id="${item.id}">
+        <button class="check-btn ${item.done ? "on" : ""}" data-action="toggle-done" data-kind="${kind}" data-id="${item.id}" aria-label="${doneLabel}">
+          ${item.done ? ICONS.circleCheck : ICONS.circle}
+        </button>
+        <div class="item-mid">
+          <div class="ledger-desc">${esc(item.description)}</div>
+          <div class="ledger-meta">${esc(item.account)} · vence ${fmtDate(item.dueDate)}</div>
+        </div>
+        <div class="ledger-value" style="color:${currency === "PEN" ? "var(--pen)" : "var(--brl)"}">${fmt(item.value, currency)}</div>
+        <div class="chevron ${open ? "open" : ""}">${ICONS.chevron}</div>
+      </div>
+      ${
+        open
+          ? `<div class="item-detail">
+          <div class="field-row"><div class="field-label">Descrição</div>
+            <input type="text" value="${esc(item.description)}" data-edit="description" data-kind="${kind}" data-id="${item.id}"/></div>
+          <div class="field-row"><div class="field-label">Data prevista</div>
+            <input type="date" value="${item.dueDate || ""}" data-edit="dueDate" data-kind="${kind}" data-id="${item.id}"/></div>
+          <div class="field-row"><div class="field-label">Valor (${currency === "PEN" ? "S/" : "R$"})</div>
+            <input type="number" step="0.01" value="${item.value}" data-edit="value" data-kind="${kind}" data-id="${item.id}"/></div>
+          ${
+            item.done
+              ? `<div class="field-row"><div class="field-label">${doneDateLabel}</div>
+            <input type="date" value="${item.doneDate || ""}" data-edit="doneDate" data-kind="${kind}" data-id="${item.id}"/></div>`
+              : ""
+          }
+          <button class="delete-btn" data-action="delete-item" data-kind="${kind}" data-id="${item.id}">${ICONS.trash} Excluir lançamento</button>
+        </div>`
+          : ""
+      }
+    </div>`;
+}
+
+/* ------------------------------ render: Contas ------------------------------ */
+
+function renderContasTab() {
+  return `
+    ${accountGroupHtml("Contas em Reais (R$)", "BRL", state.accounts.BRL)}
+    ${accountGroupHtml("Contas em Soles (PEN)", "PEN", state.accounts.PEN)}
+    <div class="section-label">Backup manual</div>
+    <div class="backup-row">
+      <button class="backup-btn" data-action="export-data">${ICONS.download} Exportar dados</button>
+      <button class="backup-btn" data-action="import-data">${ICONS.upload} Importar dados</button>
+    </div>
+    <input type="file" id="import-file-input" accept="application/json" style="display:none"/>
+    <div class="section-label">Sessão</div>
+    <div class="rate-card">
+      <div class="rate-text" style="margin-bottom:10px">Conectado como ${esc(currentUser?.email || "")}</div>
+      <button class="cancel-btn" data-action="logout">Sair</button>
+    </div>
+    <div style="text-align:center;font-size:10.5px;color:var(--text-dim);margin-top:14px">Versão do app: ${esc(APP_BUILD)}</div>`;
+}
+
+function accountGroupHtml(title, currency, accounts) {
+  return `
+    <div style="margin-bottom:22px">
+      <div class="section-label">${title}</div>
+      ${accounts
+        .map(
+          (a) => `
+        <div class="account-card">
+          <div class="field-row"><div class="field-label">Nome</div>
+            <input type="text" value="${esc(a.name)}" data-edit-acc="name" data-currency="${currency}" data-id="${a.id}"/></div>
+          <div class="field-row"><div class="field-label">Saldo inicial (${currency === "PEN" ? "S/" : "R$"})</div>
+            <input type="number" step="0.01" value="${a.initial}" data-edit-acc="initial" data-currency="${currency}" data-id="${a.id}"/></div>
+          <div class="field-row"><div class="field-label">Data do saldo inicial</div>
+            <input type="date" value="${a.initialDate}" data-edit-acc="initialDate" data-currency="${currency}" data-id="${a.id}"/></div>
+          <button class="delete-btn" data-action="delete-account" data-currency="${currency}" data-id="${a.id}">${ICONS.trash} Remover conta</button>
+        </div>`
+        )
+        .join("")}
+      ${accounts.length < 4 ? `<button class="add-account-btn" data-action="add-account" data-currency="${currency}">${ICONS.plus} Adicionar conta</button>` : ""}
+    </div>`;
+}
+
+/* ------------------------------ main render ------------------------------ */
+
+function render() {
+  const shell = document.getElementById("app-shell");
+  if (!state.ready) {
+    shell.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--text-dim)">Carregando…</div>`;
+    return;
+  }
+
+  // preserva o foco e a posição do cursor de um campo de texto que esteja
+  // sendo digitado no momento (ex: busca), já que o render reconstrói o DOM.
+  const active = document.activeElement;
+  const activeId = active && active.id;
+  const selStart = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+  const selEnd = active && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
+
+  let body = "";
+  if (state.tab === "fluxo") body = renderFluxoTab();
+  else if (state.tab === "grafico") body = renderGraficoTab();
+  else if (state.tab === "despesas") body = renderLancamentosTab("despesa");
+  else if (state.tab === "receitas") body = renderLancamentosTab("receita");
+  else if (state.tab === "contas") body = renderContasTab();
+
+  shell.innerHTML = `${renderHeader()}<main>${body}</main>${renderTabBar()}`;
+  bindEvents();
+
+  if (activeId) {
+    const el = document.getElementById(activeId);
+    if (el && typeof el.focus === "function") {
+      el.focus();
+      if (selStart !== null && el.setSelectionRange) {
+        try {
+          el.setSelectionRange(selStart, selEnd);
+        } catch (e) {}
+      }
+    }
+  }
+}
+
+/* ------------------------------ event binding ------------------------------ */
+
+function bindEvents() {
+  const shell = document.getElementById("app-shell");
+
+  bindChartInteractivity(shell);
+
+  shell.querySelectorAll('[data-action="set-tab"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      state.tab = btn.dataset.tab;
+      render();
+    })
+  );
+
+  const refreshBtn = document.getElementById("refresh-btn");
+  if (refreshBtn)
+    refreshBtn.addEventListener("click", () => {
+      db.enableNetwork().catch((e) => console.warn("enableNetwork falhou", e));
+    });
+
+  shell.querySelectorAll('[data-action="set-mode"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      state.fluxoMode = btn.dataset.mode;
+      render();
+    })
+  );
+
+  shell.querySelectorAll('[data-action="set-grafico-mode"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      state.graficoMode = btn.dataset.mode;
+      render();
+    })
+  );
+
+  const realPeriodSel = shell.querySelector('[data-action="set-real-period"]');
+  if (realPeriodSel)
+    realPeriodSel.addEventListener("change", (e) => {
+      state.graficoRealPeriod = e.target.value;
+      render();
+    });
+
+  shell.querySelectorAll('[data-action="search-text"]').forEach((input) =>
+    input.addEventListener("input", (e) => {
+      state[input.dataset.key] = e.target.value;
+      render();
+    })
+  );
+
+  const rateInput = shell.querySelector('[data-action="set-rate"]');
+  if (rateInput)
+    rateInput.addEventListener("change", (e) => {
+      mutate(() => (state.rate = parseFloat(e.target.value) || 0));
+    });
+
+  const fluxoYear = shell.querySelector('[data-action="fluxo-filter-year"]');
+  if (fluxoYear) fluxoYear.addEventListener("change", (e) => { state.fluxoFilterYear = e.target.value; render(); });
+  const fluxoMonth = shell.querySelector('[data-action="fluxo-filter-month"]');
+  if (fluxoMonth) fluxoMonth.addEventListener("change", (e) => { state.fluxoFilterMonth = e.target.value; render(); });
+
+  shell.querySelectorAll('[data-action="lanc-filter-year"]').forEach((sel) =>
+    sel.addEventListener("change", (e) => {
+      state[sel.dataset.kind === "despesa" ? "despesasFilterYear" : "receitasFilterYear"] = e.target.value;
+      render();
+    })
+  );
+  shell.querySelectorAll('[data-action="lanc-filter-month"]').forEach((sel) =>
+    sel.addEventListener("change", (e) => {
+      state[sel.dataset.kind === "despesa" ? "despesasFilterMonth" : "receitasFilterMonth"] = e.target.value;
+      render();
+    })
+  );
+
+  shell.querySelectorAll('[data-action="toggle-form"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.kind === "despesa" ? "showDespesaForm" : "showReceitaForm";
+      state[key] = !state[key];
+      render();
+    })
+  );
+  shell.querySelectorAll('[data-action="cancel-form"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.kind === "despesa" ? "showDespesaForm" : "showReceitaForm";
+      state[key] = false;
+      render();
+    })
+  );
+  shell.querySelectorAll('[data-action="set-repeat-mode"]').forEach((sel) =>
+    sel.addEventListener("change", (e) => {
+      state.newItemRepeat[sel.dataset.kind] = e.target.value;
+      render();
+    })
+  );
+
+  shell.querySelectorAll('[data-action="submit-form"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const kind = btn.dataset.kind;
+      const form = shell.querySelector(`[data-new-form="${kind}"]`);
+      const account = form.querySelector('[data-field="account"]').value;
+      const description = form.querySelector('[data-field="description"]').value.trim();
+      const value = parseFloat(form.querySelector('[data-field="value"]').value) || 0;
+      const repeatMode = state.newItemRepeat[kind] || "none";
+      if (!description) return;
+
+      let dueDates = [];
+      if (repeatMode === "none") {
+        const dueDate = form.querySelector('[data-field="dueDate"]').value;
+        if (!dueDate) return;
+        dueDates = [dueDate];
+      } else {
+        const startDate = form.querySelector('[data-field="startDate"]').value;
+        const endDate = form.querySelector('[data-field="endDate"]').value;
+        if (!startDate || !endDate || endDate < startDate) return;
+        dueDates = generateRecurringDates(startDate, endDate, repeatMode);
+        if (dueDates.length === 0) return;
+      }
+
+      mutate(() => {
+        const list = kind === "despesa" ? state.despesas : state.receitas;
+        dueDates.forEach((dueDate) => {
+          list.push({ id: uid(kind), account, description, dueDate, value, done: false, doneDate: null });
+        });
+        state[kind === "despesa" ? "showDespesaForm" : "showReceitaForm"] = false;
+        state.newItemRepeat[kind] = "none";
+      });
+    })
+  );
+
+  shell.querySelectorAll('[data-action="toggle-open"]').forEach((row) =>
+    row.addEventListener("click", (e) => {
+      if (e.target.closest('[data-action="toggle-done"]')) return;
+      const key = `${row.dataset.kind}-${row.dataset.id}`;
+      if (state.openItems.has(key)) state.openItems.delete(key);
+      else state.openItems.add(key);
+      render();
+    })
+  );
+
+  shell.querySelectorAll('[data-action="toggle-done"]').forEach((btn) =>
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const { kind, id } = btn.dataset;
+      mutate(() => {
+        const list = kind === "despesa" ? state.despesas : state.receitas;
+        const item = list.find((i) => i.id === id);
+        if (item) {
+          item.done = !item.done;
+          item.doneDate = item.done ? todayStr() : null;
+        }
+      });
+    })
+  );
+
+  shell.querySelectorAll("[data-edit]").forEach((input) =>
+    input.addEventListener("change", (e) => {
+      const { edit, kind, id } = input.dataset;
+      mutate(() => {
+        const list = kind === "despesa" ? state.despesas : state.receitas;
+        const item = list.find((i) => i.id === id);
+        if (!item) return;
+        item[edit] = edit === "value" ? parseFloat(e.target.value) || 0 : e.target.value;
+      });
+    })
+  );
+
+  shell.querySelectorAll('[data-action="delete-item"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const { kind, id } = btn.dataset;
+      mutate(() => {
+        if (kind === "despesa") state.despesas = state.despesas.filter((i) => i.id !== id);
+        else state.receitas = state.receitas.filter((i) => i.id !== id);
+      });
+    })
+  );
+
+  shell.querySelectorAll("[data-edit-acc]").forEach((input) =>
+    input.addEventListener("change", (e) => {
+      const { editAcc, currency, id } = input.dataset;
+      mutate(() => {
+        const acc = state.accounts[currency].find((a) => a.id === id);
+        if (!acc) return;
+        acc[editAcc] = editAcc === "initial" ? parseFloat(e.target.value) || 0 : e.target.value;
+      });
+    })
+  );
+
+  shell.querySelectorAll('[data-action="delete-account"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const { currency, id } = btn.dataset;
+      mutate(() => {
+        state.accounts[currency] = state.accounts[currency].filter((a) => a.id !== id);
+      });
+    })
+  );
+
+  shell.querySelectorAll('[data-action="add-account"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const { currency } = btn.dataset;
+      mutate(() => {
+        state.accounts[currency].push({ id: uid("acc"), name: "Nova conta", initial: 0, initialDate: todayStr() });
+      });
+    })
+  );
+
+  const exportBtn = shell.querySelector('[data-action="export-data"]');
+  if (exportBtn)
+    exportBtn.addEventListener("click", () => {
+      const payload = JSON.stringify({ accounts: state.accounts, rate: state.rate, despesas: state.despesas, receitas: state.receitas }, null, 2);
+      const blob = new Blob([payload], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `controle-financeiro-${todayStr()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+  const importBtn = shell.querySelector('[data-action="import-data"]');
+  const importInput = shell.querySelector("#import-file-input");
+  if (importBtn && importInput) {
+    importBtn.addEventListener("click", () => importInput.click());
+    importInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          mutate(() => {
+            if (data.accounts) state.accounts = data.accounts;
+            if (typeof data.rate === "number") state.rate = data.rate;
+            if (data.despesas) state.despesas = data.despesas;
+            if (data.receitas) state.receitas = data.receitas;
+          });
+        } catch (err) {
+          alert("Arquivo inválido.");
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  const logoutBtn = shell.querySelector('[data-action="logout"]');
+  if (logoutBtn) logoutBtn.addEventListener("click", () => auth.signOut());
+}
+
+/* ------------------------------ login / autenticação ------------------------------ */
+
+function traduzErroAuth(code) {
+  const map = {
+    "auth/invalid-email": "E-mail inválido.",
+    "auth/user-not-found": "Usuário não encontrado. Confira se essa conta foi criada em Authentication → Users.",
+    "auth/wrong-password": "Senha incorreta.",
+    "auth/invalid-credential": "E-mail ou senha incorretos.",
+    "auth/too-many-requests": "Muitas tentativas. Aguarde um pouco e tente de novo.",
+    "auth/network-request-failed": "Sem conexão com a internet para entrar.",
+    "auth/operation-not-allowed": "Login por e-mail/senha ainda não está ativado no Firebase (Authentication → Sign-in method).",
+    "auth/user-disabled": "Esse usuário foi desativado no Firebase.",
+    "auth/missing-password": "Digite a senha.",
+  };
+  return `${map[code] || "Não foi possível entrar."} (código: ${code || "desconhecido"})`;
+}
+
+function renderLoginScreen(errorMsg, prefillEmail) {
+  const shell = document.getElementById("app-shell");
+  shell.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="header-title" style="margin-bottom:4px">Controle Financeiro</div>
+        <div class="header-subtitle" style="margin-bottom:18px">Entre para continuar</div>
+        <div class="field-row"><div class="field-label">E-mail</div><input type="text" id="login-email" inputmode="email" autocomplete="username" value="${esc(prefillEmail || "")}"/></div>
+        <div class="field-row" style="margin-top:10px"><div class="field-label">Senha</div><input type="password" id="login-password" autocomplete="current-password"/></div>
+        ${errorMsg ? `<div style="color:var(--danger);font-size:12.5px;margin-top:10px">${esc(errorMsg)}</div>` : ""}
+        <button class="add-btn" id="login-submit" style="width:100%;justify-content:center;margin-top:16px">Entrar</button>
+      </div>
+    </div>`;
+  document.getElementById("login-submit").addEventListener("click", doLogin);
+  shell.querySelectorAll("#login-email, #login-password").forEach((el) =>
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doLogin();
+    })
+  );
+  if (prefillEmail) document.getElementById("login-password").focus();
+}
+
+function doLogin() {
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  if (!email || !password) return;
+  const btn = document.getElementById("login-submit");
+  btn.textContent = "Entrando…";
+  auth.signInWithEmailAndPassword(email, password).catch((err) => {
+    console.error(err);
+    renderLoginScreen(traduzErroAuth(err.code), email);
+  });
+}
+
+auth.onAuthStateChanged((user) => {
+  if (user) {
+    currentUser = user;
+    docRef = db.collection("controle-financeiro").doc(user.uid);
+    state.ready = false;
+    render();
+    startFirestoreSync();
+  } else {
+    currentUser = null;
+    docRef = null;
+    state.ready = false;
+    renderLoginScreen();
+  }
+});
+
+/* ------------------------------ boot ------------------------------ */
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((e) => console.warn("Service worker não registrado", e));
+  });
+}
+</script>
+</body>
+</html>
