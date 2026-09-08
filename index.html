@@ -12,6 +12,7 @@
 <link rel="apple-touch-icon" href="icon-192.png" />
 <link rel="icon" href="icon-192.png" />
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
@@ -85,6 +86,16 @@
   .total-strip-value { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 600; }
 
   .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px; margin-top: 4px; }
+  .chart-svg-wrap { position: relative; width: 100%; }
+  .chart-svg-wrap svg { touch-action: none; }
+  .chart-tooltip {
+    position: absolute; pointer-events: none; background: var(--panel-2); border: 1px solid var(--gold);
+    border-radius: 6px; padding: 5px 9px; font-size: 11px; font-family: 'IBM Plex Mono', monospace;
+    color: var(--text); white-space: nowrap; transform: translate(-50%, -125%); z-index: 5;
+  }
+  .extreme-card { background: var(--panel-2); border: 1.5px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .extreme-card-value { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 600; }
+  .extreme-card-date { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
 
   .ledger-list { display: flex; flex-direction: column; gap: 6px; }
   .ledger-row { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
@@ -96,6 +107,11 @@
   .empty-state { color: var(--text-dim); font-size: 13px; padding: 26px 10px; text-align: center; border: 1px dashed var(--border); border-radius: 10px; }
 
   .filter-row { display: flex; gap: 8px; margin-bottom: 4px; }
+  .search-input {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 12px; font-size: 13.5px; width: 100%; margin-bottom: 8px;
+  }
+  .search-input::placeholder { color: var(--text-dim); }
   select {
     background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
     padding: 8px 8px; font-size: 12.5px; flex: 1; min-width: 0;
@@ -143,6 +159,9 @@
   .backup-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--panel-2);
     border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 10px 0; font-size: 12.5px; cursor: pointer; }
 
+  .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+  .login-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 26px 22px; width: 100%; max-width: 340px; }
+
   nav.tab-bar {
     display: flex; justify-content: space-around; background: var(--panel); border-top: 1px solid var(--border);
     padding: 8px 4px calc(8px + env(safe-area-inset-bottom)); position: sticky; bottom: 0;
@@ -161,6 +180,8 @@
  *  Sincroniza via Firebase Firestore (tempo real + persistência offline).
  * ---------------------------------------------------------------------- */
 
+const APP_BUILD = "2026-09-08.5"; // mude este valor a cada atualização, para conferir no app se a versão é a mais recente
+
 const firebaseConfig = {
   apiKey: "AIzaSyAx6CD4hD9gD-r9kTL3nfAbE1Qg-w2LyTw",
   authDomain: "controle-financeiro-7f66e.firebaseapp.com",
@@ -172,6 +193,7 @@ const firebaseConfig = {
 };
 
 firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
 const db = firebase.firestore();
 try {
   db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
@@ -180,7 +202,8 @@ try {
 } catch (e) {
   console.warn("enablePersistence falhou", e);
 }
-const docRef = db.collection("controle-financeiro").doc("dados-conta-2");
+let docRef = null; // definido após o login, com base no UID do usuário
+let currentUser = null;
 
 const ICONS = {
   wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>',
@@ -196,6 +219,7 @@ const ICONS = {
   refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
   upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
 };
 
 const SEED_ACCOUNTS = {
@@ -219,14 +243,19 @@ let state = {
   syncStatus: "loading", // loading | saving | synced | error
   tab: "fluxo",
   fluxoMode: "real",
+  graficoMode: "previsto",
   fluxoFilterYear: "todos",
   fluxoFilterMonth: "todos",
+  fluxoSearchText: "",
   despesasFilterYear: "todos",
   despesasFilterMonth: "todos",
+  despesasSearchText: "",
   receitasFilterYear: "todos",
   receitasFilterMonth: "todos",
+  receitasSearchText: "",
   showDespesaForm: false,
   showReceitaForm: false,
+  newItemRepeat: { despesa: "none", receita: "none" },
   openItems: new Set(),
   accounts: SEED_ACCOUNTS,
   rate: SEED_RATE,
@@ -242,6 +271,29 @@ let firstSnapshotHandled = false;
 
 const uid = (p) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const todayStr = () => new Date().toISOString().slice(0, 10);
+const addDaysStr = (dateStr, days) => {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+const addMonthsClampedStr = (dateStr, months) => {
+  const [y, m, day] = dateStr.split("-").map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  const finalDay = Math.min(day, lastDay);
+  return new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), finalDay)).toISOString().slice(0, 10);
+};
+function generateRecurringDates(start, end, freq) {
+  const dates = [];
+  let i = 0;
+  let cursor = start;
+  while (cursor <= end && i < 500) {
+    dates.push(cursor);
+    i++;
+    cursor = freq === "weekly" ? addDaysStr(start, i * 7) : addMonthsClampedStr(start, i);
+  }
+  return dates;
+}
 const fmtBRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const fmtPEN = new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN" });
 const fmt = (v, cur) => (cur === "PEN" ? fmtPEN : fmtBRL).format(v || 0);
@@ -251,6 +303,12 @@ const fmtDate = (iso) => {
   return `${d}/${m}/${y}`;
 };
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const normalizeText = (s) =>
+  String(s ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+const matchesSearch = (text, query) => !query || normalizeText(text).includes(normalizeText(query));
 
 function buildAccountIndex(accounts) {
   const idx = {};
@@ -399,6 +457,7 @@ function renderHeader() {
 function renderTabBar() {
   const tabs = [
     ["fluxo", ICONS.wallet, "Fluxo"],
+    ["grafico", ICONS.chart, "Gráfico"],
     ["despesas", ICONS.down, "Despesas"],
     ["receitas", ICONS.up, "Receitas"],
     ["contas", ICONS.landmark, "Contas"],
@@ -440,24 +499,8 @@ function renderFluxoTab() {
   const years = [...new Set(rows.map((r) => r.date?.slice(0, 4)).filter(Boolean))].sort();
   const filtered = rows
     .filter((r) => (state.fluxoFilterYear === "todos" ? true : r.date?.slice(0, 4) === state.fluxoFilterYear))
-    .filter((r) => (state.fluxoFilterMonth === "todos" ? true : r.date?.slice(5, 7) === state.fluxoFilterMonth));
-
-  let chartHtml = "";
-  if (mode === "previsto") {
-    const dateSet = new Set([
-      ...accounts.BRL.map((a) => a.initialDate),
-      ...accounts.PEN.map((a) => a.initialDate),
-      ...state.despesas.map((d) => d.dueDate),
-      ...state.receitas.map((r) => r.dueDate),
-    ]);
-    const dates = [...dateSet].filter(Boolean).sort();
-    const chartData = dates.map((date) => {
-      const bal = computeBalancesAt(accounts, state.despesas, state.receitas, "previsto", date);
-      const t = totalsFromBalances(accounts, bal, state.rate);
-      return { date, total: Math.round(t.totalBRL * 100) / 100 };
-    });
-    if (chartData.length > 1) chartHtml = buildSparklineSvg(chartData);
-  }
+    .filter((r) => (state.fluxoFilterMonth === "todos" ? true : r.date?.slice(5, 7) === state.fluxoFilterMonth))
+    .filter((r) => matchesSearch(r.description, state.fluxoSearchText));
 
   return `
     ${rateCardHtml()}
@@ -486,12 +529,12 @@ function renderFluxoTab() {
         <div><span class="total-strip-label">Total S/</span><span class="total-strip-value" style="color:var(--pen)">${fmtPEN.format(currentTotals.pen)}</span></div>
         <div><span class="total-strip-label">Total geral (R$)</span><span class="total-strip-value" style="color:var(--gold)">${fmtBRL.format(currentTotals.totalBRL)}</span></div>
       </div>`
-        : chartHtml
-        ? `<div class="chart-card"><div class="section-label" style="margin-top:0">Saldo total projetado (R$)</div>${chartHtml}</div>`
         : ""
     }
 
     <div class="section-label">${mode === "real" ? "Movimentações realizadas" : "Todos os lançamentos previstos"}</div>
+    <input type="text" id="fluxo-search" class="search-input" data-action="search-text" data-key="fluxoSearchText"
+      placeholder="Buscar por descrição…" value="${esc(state.fluxoSearchText)}"/>
     <div class="filter-row">
       <select data-action="fluxo-filter-year">
         <option value="todos" ${state.fluxoFilterYear === "todos" ? "selected" : ""}>Todo ano</option>
@@ -524,36 +567,232 @@ function renderFluxoTab() {
     </div>`;
 }
 
-function buildSparklineSvg(data) {
-  const W = 400, H = 150, PAD = 8;
+/* ------------------------------ dados e gráfico do saldo ------------------------------ */
+
+function buildChartData(mode) {
+  const accounts = state.accounts;
+  const today = todayStr();
+  let dateSet;
+  if (mode === "previsto") {
+    dateSet = new Set([
+      today,
+      ...accounts.BRL.map((a) => a.initialDate),
+      ...accounts.PEN.map((a) => a.initialDate),
+      ...state.despesas.map((d) => d.dueDate),
+      ...state.receitas.map((r) => r.dueDate),
+    ]);
+  } else {
+    dateSet = new Set([...accounts.BRL.map((a) => a.initialDate), ...accounts.PEN.map((a) => a.initialDate)]);
+    state.despesas.forEach((d) => {
+      if (d.done) dateSet.add(d.doneDate || d.dueDate);
+    });
+    state.receitas.forEach((r) => {
+      if (r.done) dateSet.add(r.doneDate || r.dueDate);
+    });
+    dateSet.add(today);
+  }
+  let dates = [...dateSet].filter(Boolean).sort();
+  // o previsto olha só daqui pra frente; o real nunca passa de hoje.
+  if (mode === "previsto") dates = dates.filter((d) => d >= today);
+  else dates = dates.filter((d) => d <= today);
+  return dates.map((date) => {
+    const bal = computeBalancesAt(accounts, state.despesas, state.receitas, mode, date);
+    const t = totalsFromBalances(accounts, bal, state.rate);
+    return { date, total: Math.round(t.totalBRL * 100) / 100 };
+  });
+}
+
+function findExtremes(data) {
+  let min = data[0], max = data[0];
+  for (const d of data) {
+    if (d.total < min.total) min = d;
+    if (d.total > max.total) max = d;
+  }
+  return { min, max };
+}
+
+function buildBalanceChart(data) {
+  const W = 400,
+    H = 260,
+    PAD_X = 10,
+    PAD_TOP = 34,
+    PAD_BOTTOM = 26;
   const values = data.map((d) => d.total);
   const min = Math.min(...values, 0);
-  const max = Math.max(...values, 1);
+  const max = Math.max(...values, 0);
   const range = max - min || 1;
-  const stepX = (W - PAD * 2) / (data.length - 1);
-  const points = data.map((d, i) => {
-    const x = PAD + i * stepX;
-    const y = H - PAD - ((d.total - min) / range) * (H - PAD * 2);
-    return [x, y];
-  });
+  const usableH = H - PAD_TOP - PAD_BOTTOM;
+  const scaleY = (v) => H - PAD_BOTTOM - ((v - min) / range) * usableH;
+  const stepX = (W - PAD_X * 2) / (data.length - 1 || 1);
+  const points = data.map((d, i) => [PAD_X + i * stepX, scaleY(d.total)]);
+  const zeroY = scaleY(0);
+
   const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
-  const areaPath = `${linePath} L${points[points.length - 1][0].toFixed(1)},${H - PAD} L${points[0][0].toFixed(1)},${H - PAD} Z`;
-  const firstDate = data[0].date, lastDate = data[data.length - 1].date;
+  const areaPath = `${linePath} L${points[points.length - 1][0].toFixed(1)},${zeroY.toFixed(1)} L${points[0][0].toFixed(1)},${zeroY.toFixed(1)} Z`;
+
+  const { min: minPoint, max: maxPoint } = findExtremes(data);
+  const minIdx = data.indexOf(minPoint);
+  const maxIdx = data.indexOf(maxPoint);
+  const minXY = points[minIdx];
+  const maxXY = points[maxIdx];
+
+  const clipId = "clip-" + Math.random().toString(36).slice(2, 8);
+
+  const minLabelAnchor = minXY[0] > W * 0.6 ? "end" : minXY[0] < W * 0.15 ? "start" : "middle";
+  const minLabelDx = minLabelAnchor === "end" ? -6 : minLabelAnchor === "start" ? 6 : 0;
+  const minLabelY = minXY[1] < H - PAD_BOTTOM - 26 ? minXY[1] - 14 : minXY[1] - 14;
+
+  const maxLabelAnchor = maxXY[0] > W * 0.6 ? "end" : maxXY[0] < W * 0.15 ? "start" : "middle";
+  const maxLabelDx = maxLabelAnchor === "end" ? -6 : maxLabelAnchor === "start" ? 6 : 0;
+
+  const firstDate = data[0].date,
+    lastDate = data[data.length - 1].date;
+
+  const pointsPayload = JSON.stringify(points.map((p, i) => ({ x: p[0], y: p[1], date: data[i].date, total: data[i].total })));
+
   return `
-    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:150px;display:block">
-      <defs>
-        <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--gold)" stop-opacity="0.35"/>
-          <stop offset="100%" stop-color="var(--gold)" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <path d="${areaPath}" fill="url(#gradTotal)" stroke="none"/>
-      <path d="${linePath}" fill="none" stroke="var(--gold)" stroke-width="2"/>
-    </svg>
-    <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);padding:0 2px">
+    <div class="chart-svg-wrap" data-chart-points='${pointsPayload}' data-chart-w="${W}" data-chart-h="${H}">
+      <svg class="balance-chart-svg" viewBox="0 0 ${W} ${H}" style="width:100%;height:260px;display:block;overflow:visible">
+        <defs>
+          <clipPath id="${clipId}-above"><rect x="0" y="0" width="${W}" height="${zeroY.toFixed(1)}"/></clipPath>
+          <clipPath id="${clipId}-below"><rect x="0" y="${zeroY.toFixed(1)}" width="${W}" height="${(H - zeroY).toFixed(1)}"/></clipPath>
+          <linearGradient id="${clipId}-gpos" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--brl)" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="var(--brl)" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="${clipId}-gneg" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stop-color="var(--danger)" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="var(--danger)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+
+        <line x1="${PAD_X}" y1="${zeroY.toFixed(1)}" x2="${W - PAD_X}" y2="${zeroY.toFixed(1)}" stroke="rgba(255,255,255,0.22)" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="${W - PAD_X}" y="${(zeroY - 5).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-dim)" font-family="'IBM Plex Mono',monospace">R$ 0</text>
+
+        <path d="${areaPath}" fill="url(#${clipId}-gpos)" clip-path="url(#${clipId}-above)"/>
+        <path d="${areaPath}" fill="url(#${clipId}-gneg)" clip-path="url(#${clipId}-below)"/>
+        <path d="${linePath}" fill="none" stroke="var(--brl)" stroke-width="2" clip-path="url(#${clipId}-above)"/>
+        <path d="${linePath}" fill="none" stroke="var(--danger)" stroke-width="2" clip-path="url(#${clipId}-below)"/>
+
+        <line x1="${minXY[0].toFixed(1)}" y1="${minXY[1].toFixed(1)}" x2="${minXY[0].toFixed(1)}" y2="${H - PAD_BOTTOM}" stroke="var(--gold)" stroke-width="1" stroke-dasharray="2,3" opacity="0.6"/>
+        <circle cx="${minXY[0].toFixed(1)}" cy="${minXY[1].toFixed(1)}" r="4" fill="var(--bg)" stroke="var(--gold)" stroke-width="2"/>
+        <text x="${(minXY[0] + minLabelDx).toFixed(1)}" y="${minLabelY.toFixed(1)}" text-anchor="${minLabelAnchor}" font-size="10.5" font-weight="600" fill="var(--gold)" font-family="'IBM Plex Mono',monospace">menor: ${fmtBRL.format(minPoint.total)}</text>
+        <text x="${(minXY[0] + minLabelDx).toFixed(1)}" y="${(minLabelY + 12).toFixed(1)}" text-anchor="${minLabelAnchor}" font-size="9" fill="var(--text-dim)" font-family="'IBM Plex Mono',monospace">${fmtDate(minPoint.date)}</text>
+
+        ${
+          maxIdx !== minIdx
+            ? `<circle cx="${maxXY[0].toFixed(1)}" cy="${maxXY[1].toFixed(1)}" r="3" fill="var(--panel)" stroke="var(--text-dim)" stroke-width="1.5"/>
+        <text x="${(maxXY[0] + maxLabelDx).toFixed(1)}" y="${(maxXY[1] - 10).toFixed(1)}" text-anchor="${maxLabelAnchor}" font-size="9" fill="var(--text-dim)" font-family="'IBM Plex Mono',monospace">maior: ${fmtBRL.format(maxPoint.total)}</text>`
+            : ""
+        }
+
+        <line class="chart-hoverline" x1="0" y1="${PAD_TOP - 10}" x2="0" y2="${H - PAD_BOTTOM}" stroke="var(--text-dim)" stroke-width="1" style="display:none"/>
+        <circle class="chart-hoverdot" r="5" fill="var(--gold)" stroke="var(--bg)" stroke-width="1.5" style="display:none"/>
+      </svg>
+      <div class="chart-tooltip" style="display:none"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text-dim);padding:0 2px;margin-top:-4px">
       <span>${fmtDate(firstDate)}</span><span>${fmtDate(lastDate)}</span>
+    </div>
+    <div style="text-align:center;font-size:10.5px;color:var(--text-dim);margin-top:6px">Toque ou passe o dedo sobre o gráfico para ver cada ponto</div>`;
+}
+
+function bindChartInteractivity(shell) {
+  const wrap = shell.querySelector(".chart-svg-wrap");
+  if (!wrap) return;
+  const svg = wrap.querySelector(".balance-chart-svg");
+  const hoverLine = wrap.querySelector(".chart-hoverline");
+  const hoverDot = wrap.querySelector(".chart-hoverdot");
+  const tooltip = wrap.querySelector(".chart-tooltip");
+  if (!svg || !hoverLine || !hoverDot || !tooltip) return;
+
+  const points = JSON.parse(wrap.dataset.chartPoints);
+  const W = parseFloat(wrap.dataset.chartW);
+  const H = parseFloat(wrap.dataset.chartH);
+
+  function nearestPoint(clientX) {
+    const rect = svg.getBoundingClientRect();
+    const svgX = ((clientX - rect.left) / rect.width) * W;
+    let nearest = points[0],
+      dist = Math.abs(points[0].x - svgX);
+    for (const p of points) {
+      const d = Math.abs(p.x - svgX);
+      if (d < dist) {
+        nearest = p;
+        dist = d;
+      }
+    }
+    return { nearest, rect };
+  }
+
+  function showAt(clientX) {
+    const { nearest, rect } = nearestPoint(clientX);
+    hoverLine.setAttribute("x1", nearest.x);
+    hoverLine.setAttribute("x2", nearest.x);
+    hoverLine.style.display = "block";
+    hoverDot.setAttribute("cx", nearest.x);
+    hoverDot.setAttribute("cy", nearest.y);
+    hoverDot.style.display = "block";
+    tooltip.textContent = `${fmtDate(nearest.date)} · ${fmtBRL.format(nearest.total)}`;
+    tooltip.style.display = "block";
+    const pxX = (nearest.x / W) * rect.width;
+    const pxY = (nearest.y / H) * rect.height;
+    tooltip.style.left = `${Math.min(Math.max(pxX, 4), rect.width - 4)}px`;
+    tooltip.style.top = `${Math.max(pxY, 24)}px`;
+  }
+
+  function hide() {
+    hoverLine.style.display = "none";
+    hoverDot.style.display = "none";
+    tooltip.style.display = "none";
+  }
+
+  svg.addEventListener("pointerdown", (e) => showAt(e.clientX));
+  svg.addEventListener("pointermove", (e) => showAt(e.clientX));
+  svg.addEventListener("pointerleave", hide);
+  svg.addEventListener("pointerup", hide);
+  svg.addEventListener("pointercancel", hide);
+}
+
+function renderGraficoTab() {
+  const mode = state.graficoMode;
+  const data = buildChartData(mode);
+
+  if (data.length < 2) {
+    return `
+      <div class="segmented">
+        <button class="${mode === "real" ? "active" : ""}" data-action="set-grafico-mode" data-mode="real">Real</button>
+        <button class="${mode === "previsto" ? "active" : ""}" data-action="set-grafico-mode" data-mode="previsto">Previsto</button>
+      </div>
+      <div class="empty-state" style="margin-top:16px">Lance despesas e receitas para ver a projeção do saldo aqui.</div>`;
+  }
+
+  const { min, max } = findExtremes(data);
+
+  return `
+    <div class="segmented">
+      <button class="${mode === "real" ? "active" : ""}" data-action="set-grafico-mode" data-mode="real">Real</button>
+      <button class="${mode === "previsto" ? "active" : ""}" data-action="set-grafico-mode" data-mode="previsto">Previsto</button>
+    </div>
+
+    <div class="section-label">${mode === "previsto" ? "Menor saldo previsto" : "Menor saldo já registrado"}</div>
+    <div class="extreme-card" style="border-color:${min.total < 0 ? "var(--danger)" : "var(--border)"}">
+      <div>
+        <div class="extreme-card-value" style="color:${min.total < 0 ? "var(--danger)" : "var(--brl)"}">${fmtBRL.format(min.total)}</div>
+        <div class="extreme-card-date">${fmtDate(min.date)}${min.total < 0 ? " · saldo negativo" : " · ainda positivo"}</div>
+      </div>
+    </div>
+
+    <div class="section-label">Saldo total (R$) ao longo do tempo</div>
+    <div class="chart-card">${buildBalanceChart(data)}</div>
+
+    <div class="total-strip" style="margin-top:12px">
+      <div><span class="total-strip-label">Menor saldo</span><span class="total-strip-value" style="color:${min.total < 0 ? "var(--danger)" : "var(--brl)"}">${fmtBRL.format(min.total)}</span></div>
+      <div><span class="total-strip-label">Maior saldo</span><span class="total-strip-value" style="color:var(--brl)">${fmtBRL.format(max.total)}</span></div>
+      <div><span class="total-strip-label">Saldo hoje</span><span class="total-strip-value" style="color:var(--gold)">${fmtBRL.format(data.find((d) => d.date === todayStr())?.total ?? data[data.length - 1].total)}</span></div>
     </div>`;
 }
+
 
 function rateCardHtml() {
   return `
@@ -576,12 +815,15 @@ function renderLancamentosTab(kind) {
   const accountNames = [...state.accounts.BRL, ...state.accounts.PEN].map((a) => a.name);
   const filterYearKey = isDespesa ? "despesasFilterYear" : "receitasFilterYear";
   const filterMonthKey = isDespesa ? "despesasFilterMonth" : "receitasFilterMonth";
+  const searchKey = isDespesa ? "despesasSearchText" : "receitasSearchText";
+  const searchId = isDespesa ? "despesas-search" : "receitas-search";
   const showFormKey = isDespesa ? "showDespesaForm" : "showReceitaForm";
   const years = [...new Set(items.map((i) => i.dueDate?.slice(0, 4)).filter(Boolean))].sort();
 
   const filtered = items
     .filter((i) => (state[filterYearKey] === "todos" ? true : i.dueDate?.slice(0, 4) === state[filterYearKey]))
     .filter((i) => (state[filterMonthKey] === "todos" ? true : i.dueDate?.slice(5, 7) === state[filterMonthKey]))
+    .filter((i) => matchesSearch(i.description, state[searchKey]))
     .sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0));
 
   const doneLabel = isDespesa ? "Pago" : "Recebido";
@@ -589,6 +831,8 @@ function renderLancamentosTab(kind) {
   const title = isDespesa ? "Despesas" : "Receitas";
 
   return `
+    <input type="text" id="${searchId}" class="search-input" data-action="search-text" data-key="${searchKey}"
+      placeholder="Buscar por descrição…" value="${esc(state[searchKey])}"/>
     <div class="filter-row">
       <select data-action="lanc-filter-year" data-kind="${kind}">
         <option value="todos" ${state[filterYearKey] === "todos" ? "selected" : ""}>Todo ano</option>
@@ -614,6 +858,7 @@ function renderLancamentosTab(kind) {
 }
 
 function newItemFormHtml(kind, accountNames) {
+  const repeatMode = state.newItemRepeat[kind] || "none";
   return `
     <div class="form-card" data-new-form="${kind}">
       <div class="field-row"><div class="field-label">Conta</div>
@@ -622,10 +867,27 @@ function newItemFormHtml(kind, accountNames) {
       <div class="field-row"><div class="field-label">Descrição</div>
         <input type="text" data-field="description" placeholder="Ex: Aluguel"/>
       </div>
-      <div class="field-row"><div class="field-label">Data prevista</div>
-        <input type="date" data-field="dueDate" value="${todayStr()}"/>
+      <div class="field-row"><div class="field-label">Repetição</div>
+        <select data-action="set-repeat-mode" data-kind="${kind}">
+          <option value="none" ${repeatMode === "none" ? "selected" : ""}>Não repete (lançamento único)</option>
+          <option value="weekly" ${repeatMode === "weekly" ? "selected" : ""}>Repete toda semana</option>
+          <option value="monthly" ${repeatMode === "monthly" ? "selected" : ""}>Repete todo mês</option>
+        </select>
       </div>
-      <div class="field-row"><div class="field-label">Valor</div>
+      ${
+        repeatMode === "none"
+          ? `<div class="field-row"><div class="field-label">Data prevista</div>
+        <input type="date" data-field="dueDate" value="${todayStr()}"/>
+      </div>`
+          : `<div class="field-row"><div class="field-label">Data de início</div>
+        <input type="date" data-field="startDate" value="${todayStr()}"/>
+      </div>
+      <div class="field-row"><div class="field-label">Data de fim</div>
+        <input type="date" data-field="endDate" value="${todayStr()}"/>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-dim)">Cria um lançamento com o valor cheio em cada ${repeatMode === "weekly" ? "semana" : "mês"}, do início ao fim (não é parcelado).</div>`
+      }
+      <div class="field-row"><div class="field-label">Valor${repeatMode !== "none" ? " (de cada ocorrência)" : ""}</div>
         <input type="number" step="0.01" data-field="value" placeholder="0.00"/>
       </div>
       <div class="form-actions">
@@ -684,7 +946,13 @@ function renderContasTab() {
       <button class="backup-btn" data-action="export-data">${ICONS.download} Exportar dados</button>
       <button class="backup-btn" data-action="import-data">${ICONS.upload} Importar dados</button>
     </div>
-    <input type="file" id="import-file-input" accept="application/json" style="display:none"/>`;
+    <input type="file" id="import-file-input" accept="application/json" style="display:none"/>
+    <div class="section-label">Sessão</div>
+    <div class="rate-card">
+      <div class="rate-text" style="margin-bottom:10px">Conectado como ${esc(currentUser?.email || "")}</div>
+      <button class="cancel-btn" data-action="logout">Sair</button>
+    </div>
+    <div style="text-align:center;font-size:10.5px;color:var(--text-dim);margin-top:14px">Versão do app: ${esc(APP_BUILD)}</div>`;
 }
 
 function accountGroupHtml(title, currency, accounts) {
@@ -717,20 +985,43 @@ function render() {
     shell.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--text-dim)">Carregando…</div>`;
     return;
   }
+
+  // preserva o foco e a posição do cursor de um campo de texto que esteja
+  // sendo digitado no momento (ex: busca), já que o render reconstrói o DOM.
+  const active = document.activeElement;
+  const activeId = active && active.id;
+  const selStart = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+  const selEnd = active && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
+
   let body = "";
   if (state.tab === "fluxo") body = renderFluxoTab();
+  else if (state.tab === "grafico") body = renderGraficoTab();
   else if (state.tab === "despesas") body = renderLancamentosTab("despesa");
   else if (state.tab === "receitas") body = renderLancamentosTab("receita");
   else if (state.tab === "contas") body = renderContasTab();
 
   shell.innerHTML = `${renderHeader()}<main>${body}</main>${renderTabBar()}`;
   bindEvents();
+
+  if (activeId) {
+    const el = document.getElementById(activeId);
+    if (el && typeof el.focus === "function") {
+      el.focus();
+      if (selStart !== null && el.setSelectionRange) {
+        try {
+          el.setSelectionRange(selStart, selEnd);
+        } catch (e) {}
+      }
+    }
+  }
 }
 
 /* ------------------------------ event binding ------------------------------ */
 
 function bindEvents() {
   const shell = document.getElementById("app-shell");
+
+  bindChartInteractivity(shell);
 
   shell.querySelectorAll('[data-action="set-tab"]').forEach((btn) =>
     btn.addEventListener("click", () => {
@@ -748,6 +1039,20 @@ function bindEvents() {
   shell.querySelectorAll('[data-action="set-mode"]').forEach((btn) =>
     btn.addEventListener("click", () => {
       state.fluxoMode = btn.dataset.mode;
+      render();
+    })
+  );
+
+  shell.querySelectorAll('[data-action="set-grafico-mode"]').forEach((btn) =>
+    btn.addEventListener("click", () => {
+      state.graficoMode = btn.dataset.mode;
+      render();
+    })
+  );
+
+  shell.querySelectorAll('[data-action="search-text"]').forEach((input) =>
+    input.addEventListener("input", (e) => {
+      state[input.dataset.key] = e.target.value;
       render();
     })
   );
@@ -790,19 +1095,43 @@ function bindEvents() {
       render();
     })
   );
+  shell.querySelectorAll('[data-action="set-repeat-mode"]').forEach((sel) =>
+    sel.addEventListener("change", (e) => {
+      state.newItemRepeat[sel.dataset.kind] = e.target.value;
+      render();
+    })
+  );
+
   shell.querySelectorAll('[data-action="submit-form"]').forEach((btn) =>
     btn.addEventListener("click", () => {
       const kind = btn.dataset.kind;
       const form = shell.querySelector(`[data-new-form="${kind}"]`);
       const account = form.querySelector('[data-field="account"]').value;
       const description = form.querySelector('[data-field="description"]').value.trim();
-      const dueDate = form.querySelector('[data-field="dueDate"]').value;
       const value = parseFloat(form.querySelector('[data-field="value"]').value) || 0;
-      if (!description || !dueDate) return;
+      const repeatMode = state.newItemRepeat[kind] || "none";
+      if (!description) return;
+
+      let dueDates = [];
+      if (repeatMode === "none") {
+        const dueDate = form.querySelector('[data-field="dueDate"]').value;
+        if (!dueDate) return;
+        dueDates = [dueDate];
+      } else {
+        const startDate = form.querySelector('[data-field="startDate"]').value;
+        const endDate = form.querySelector('[data-field="endDate"]').value;
+        if (!startDate || !endDate || endDate < startDate) return;
+        dueDates = generateRecurringDates(startDate, endDate, repeatMode);
+        if (dueDates.length === 0) return;
+      }
+
       mutate(() => {
         const list = kind === "despesa" ? state.despesas : state.receitas;
-        list.push({ id: uid(kind), account, description, dueDate, value, done: false, doneDate: null });
+        dueDates.forEach((dueDate) => {
+          list.push({ id: uid(kind), account, description, dueDate, value, done: false, doneDate: null });
+        });
         state[kind === "despesa" ? "showDespesaForm" : "showReceitaForm"] = false;
+        state.newItemRepeat[kind] = "none";
       });
     })
   );
@@ -920,12 +1249,78 @@ function bindEvents() {
       reader.readAsText(file);
     });
   }
+
+  const logoutBtn = shell.querySelector('[data-action="logout"]');
+  if (logoutBtn) logoutBtn.addEventListener("click", () => auth.signOut());
 }
 
-/* ------------------------------ boot ------------------------------ */
+/* ------------------------------ login / autenticação ------------------------------ */
 
-render(); // mostra "Carregando…" imediatamente
-startFirestoreSync();
+function traduzErroAuth(code) {
+  const map = {
+    "auth/invalid-email": "E-mail inválido.",
+    "auth/user-not-found": "Usuário não encontrado. Confira se essa conta foi criada em Authentication → Users.",
+    "auth/wrong-password": "Senha incorreta.",
+    "auth/invalid-credential": "E-mail ou senha incorretos.",
+    "auth/too-many-requests": "Muitas tentativas. Aguarde um pouco e tente de novo.",
+    "auth/network-request-failed": "Sem conexão com a internet para entrar.",
+    "auth/operation-not-allowed": "Login por e-mail/senha ainda não está ativado no Firebase (Authentication → Sign-in method).",
+    "auth/user-disabled": "Esse usuário foi desativado no Firebase.",
+    "auth/missing-password": "Digite a senha.",
+  };
+  return `${map[code] || "Não foi possível entrar."} (código: ${code || "desconhecido"})`;
+}
+
+function renderLoginScreen(errorMsg, prefillEmail) {
+  const shell = document.getElementById("app-shell");
+  shell.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="header-title" style="margin-bottom:4px">Controle Financeiro</div>
+        <div class="header-subtitle" style="margin-bottom:18px">Entre para continuar</div>
+        <div class="field-row"><div class="field-label">E-mail</div><input type="text" id="login-email" inputmode="email" autocomplete="username" value="${esc(prefillEmail || "")}"/></div>
+        <div class="field-row" style="margin-top:10px"><div class="field-label">Senha</div><input type="password" id="login-password" autocomplete="current-password"/></div>
+        ${errorMsg ? `<div style="color:var(--danger);font-size:12.5px;margin-top:10px">${esc(errorMsg)}</div>` : ""}
+        <button class="add-btn" id="login-submit" style="width:100%;justify-content:center;margin-top:16px">Entrar</button>
+      </div>
+    </div>`;
+  document.getElementById("login-submit").addEventListener("click", doLogin);
+  shell.querySelectorAll("#login-email, #login-password").forEach((el) =>
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doLogin();
+    })
+  );
+  if (prefillEmail) document.getElementById("login-password").focus();
+}
+
+function doLogin() {
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  if (!email || !password) return;
+  const btn = document.getElementById("login-submit");
+  btn.textContent = "Entrando…";
+  auth.signInWithEmailAndPassword(email, password).catch((err) => {
+    console.error(err);
+    renderLoginScreen(traduzErroAuth(err.code), email);
+  });
+}
+
+auth.onAuthStateChanged((user) => {
+  if (user) {
+    currentUser = user;
+    docRef = db.collection("controle-financeiro").doc(user.uid);
+    state.ready = false;
+    render();
+    startFirestoreSync();
+  } else {
+    currentUser = null;
+    docRef = null;
+    state.ready = false;
+    renderLoginScreen();
+  }
+});
+
+/* ------------------------------ boot ------------------------------ */
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
